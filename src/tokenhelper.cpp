@@ -13,8 +13,11 @@
 // Prints the result (token as hex, or an int) to stdout; errors to stderr.
 
 #include <aidl/vendor/xiaomi/hardware/aidl/midevauth/IMidevauthService.h>
-#include <android/binder_manager.h>
 #include <android/binder_auto_utils.h>
+#include <dlfcn.h>
+// AServiceManager_* lives in android/binder_manager.h, which is a system/LLNDK
+// header absent from the public NDK. Resolve it at runtime from the device's
+// libbinder_ndk.so via dlsym so we only link against NDK-public symbols.
 
 #include <cstdio>
 #include <cstdlib>
@@ -51,11 +54,15 @@ static void print_hex(const std::vector<uint8_t>& v) {
 
 static std::shared_ptr<IMidevauthService> get_service() {
     const char* name = "vendor.xiaomi.hardware.aidl.midevauth.IMidevauthService/default";
-    ndk::SpAIBinder bin(AServiceManager_waitForService(name));
-    if (!bin.get()) {
-        fprintf(stderr, "tokenhelper: service '%s' not found\n", name);
-        return nullptr;
-    }
+    void* h = dlopen("libbinder_ndk.so", RTLD_NOW);
+    if (!h) { fprintf(stderr, "tokenhelper: dlopen libbinder_ndk.so: %s\n", dlerror()); return nullptr; }
+    using fn_t = AIBinder* (*)(const char*);
+    AIBinder* raw = nullptr;
+    if (auto w = (fn_t)dlsym(h, "AServiceManager_waitForService")) raw = w(name);
+    else if (auto g = (fn_t)dlsym(h, "AServiceManager_getService")) raw = g(name);
+    else { fprintf(stderr, "tokenhelper: no AServiceManager_* symbol\n"); return nullptr; }
+    if (!raw) { fprintf(stderr, "tokenhelper: service '%s' not found\n", name); return nullptr; }
+    ndk::SpAIBinder bin(raw);
     auto svc = IMidevauthService::fromBinder(bin);
     if (!svc) fprintf(stderr, "tokenhelper: fromBinder returned null\n");
     return svc;

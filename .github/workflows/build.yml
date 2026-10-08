@@ -42,7 +42,7 @@ jobs:
           "$CXX" -std=c++17 -O2 -Wall -fPIE -pie \
             -I gen \
             src/tokenhelper.cpp $(find gen -name '*.cpp') \
-            -lbinder_ndk -llog \
+            -lbinder_ndk -llog -ldl \
             -o tokenhelper
           "$BIN/llvm-readelf" -h tokenhelper | head -20
           echo "built OK"
