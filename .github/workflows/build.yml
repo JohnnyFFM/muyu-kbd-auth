@@ -7,47 +7,43 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      BUILD_TOOLS: "34.0.0"
-      NDK_VER: "26.3.11579264"
-      API: "31"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install build-tools + NDK
-        run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platform-tools" "build-tools;${BUILD_TOOLS}" "ndk;${NDK_VER}" "platforms;android-34"
-
-      - name: Generate NDK AIDL stubs and compile
+      - name: Build tokenhelper (arm64) with preinstalled SDK/NDK
         run: |
           set -euxo pipefail
-          AIDL="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}/aidl"
-          NDK="${ANDROID_HOME}/ndk/${NDK_VER}"
-          CXX="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API}-clang++"
-          test -x "$AIDL"
-          test -x "$CXX"
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          echo "SDK=$SDK"; ls -1 "$SDK/build-tools" || true
+
+          # newest build-tools that ships an aidl supporting --lang=ndk
+          AIDL=""
+          for d in $(ls -1 "$SDK/build-tools" | sort -rV); do
+            if [ -x "$SDK/build-tools/$d/aidl" ]; then AIDL="$SDK/build-tools/$d/aidl"; break; fi
+          done
+          test -n "$AIDL"; echo "AIDL=$AIDL"
+
+          # preinstalled NDK (fall back to any under $SDK/ndk)
+          NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}}"
+          if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then NDK="$(ls -d "$SDK"/ndk/* | sort -rV | head -1)"; fi
+          echo "NDK=$NDK"; test -d "$NDK"
+          CLANG="$(ls "$NDK"/toolchains/llvm/prebuilt/*/bin/clang++ | head -1)"
+          READELF="$(ls "$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-readelf | head -1)"
+          echo "CLANG=$CLANG"; test -x "$CLANG"
+
           mkdir -p gen
           "$AIDL" --lang=ndk --structured --stability=vintf \
             -I aidl -o gen -h gen \
             aidl/vendor/xiaomi/hardware/aidl/midevauth/IMidevauthService.aidl
-          echo "=== generated files ==="; find gen -type f
-          "$CXX" -std=c++17 -O2 -Wall -fPIE -pie \
+          echo "=== generated ==="; find gen -type f
+
+          "$CLANG" --target=aarch64-linux-android31 \
+            -std=c++17 -O2 -Wall -fPIE -pie \
             -I gen \
             src/tokenhelper.cpp $(find gen -name '*.cpp') \
             -lbinder_ndk -llog \
             -o tokenhelper
-          file tokenhelper || true
-          "${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h tokenhelper | head -20 || true
+          "$READELF" -h tokenhelper | head -20
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
