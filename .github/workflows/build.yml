@@ -37,7 +37,20 @@ jobs:
           [ -n "$CXX" ] || CXX="$BIN/clang++ --target=aarch64-linux-android31"
           echo "CXX=$CXX"
           echo "=== binder_ndk C++ headers in NDK ==="
-          find "$NDK" -name 'binder_interface_utils.h' -o -name 'binder_to_string.h' -o -name 'binder_parcel_utils.h' | head
+          find "$NDK" -name 'binder_interface_utils.h' -o -name 'binder_to_string.h' -o -name 'binder_parcel_utils.h' | head || true
+
+          # NDK r30 omits the AIDL-NDK C++ wrapper headers; vendor them from AOSP.
+          # (The C headers they depend on are present in the NDK sysroot.)
+          mkdir -p ndkcpp/android
+          BASE="https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/libs/binder/ndk/include_cpp/android"
+          for h in binder_interface_utils.h binder_parcel_utils.h binder_to_string.h binder_auto_utils.h; do
+            if [ ! -f "$NDK"/toolchains/llvm/prebuilt/*/sysroot/usr/include/android/$h ] 2>/dev/null; then
+              echo "fetching $h from AOSP"
+              curl -fsSL "$BASE/$h?format=TEXT" | base64 -d > "ndkcpp/android/$h"
+              head -1 "ndkcpp/android/$h" || true
+            fi
+          done
+          echo "=== vendored headers ==="; ls -l ndkcpp/android || true
 
           mkdir -p gen
           "$AIDL" --lang=ndk --structured --stability=vintf \
@@ -46,7 +59,7 @@ jobs:
           echo "=== generated ==="; find gen -type f
 
           $CXX -std=c++17 -O2 -Wall -fPIE -pie \
-            -I gen \
+            -I gen -I ndkcpp \
             src/tokenhelper.cpp $(find gen -name '*.cpp') \
             -lbinder_ndk -llog \
             -o tokenhelper
