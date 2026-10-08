@@ -96,3 +96,21 @@ Two gotchas that matter:
    sends one AUTH_START at startup and then answers every keyboard re-auth.
 
 `device/start.sh` launches both detached with the right environment.
+
+## Install at boot (Magisk)
+
+Put the five runtime files in `/data/adb/kbdauth/` and the launcher in
+`/data/adb/service.d/`:
+
+```sh
+su -c 'mkdir -p /data/adb/kbdauth'
+adb push midevauthd libmidevauth.so vendor.xiaomi.hardware.aidl.midevauth-V1-ndk_platform.so tokenhelper device/kbd_auth.sh /data/adb/kbdauth/   # midevauthd/libs from the stock ROM
+adb push device/service.d-kbdauth.sh /data/adb/service.d/kbdauth.sh
+su -c 'chmod 755 /data/adb/kbdauth/midevauthd /data/adb/kbdauth/tokenhelper /data/adb/kbdauth/kbd_auth.sh /data/adb/service.d/kbdauth.sh'
+```
+
+On boot the launcher waits for `sys.boot_completed` + `/dev/nanodev0`, starts
+`midevauthd`, waits for it to register with the vendor servicemanager, then
+starts `kbd_auth.sh`. Verified to survive a reboot and re-authenticate with no
+manual steps. Remove with `rm /data/adb/service.d/kbdauth.sh` + kill the two
+processes. Logs: `/data/adb/kbd/svc.log`, `/data/adb/kbd/auth.log`.
