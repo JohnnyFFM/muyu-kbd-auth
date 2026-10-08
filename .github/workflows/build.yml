@@ -39,7 +39,7 @@ jobs:
             -I aidl -o gen -h gen \
             aidl/vendor/xiaomi/hardware/aidl/midevauth/IMidevauthService.aidl
           echo "=== generated ==="; find gen -type f
-          "$CXX" -std=c++17 -O2 -Wall -fPIE -pie \
+          "$CXX" -std=c++17 -O2 -Wall -fPIE -pie -static-libstdc++ \
             -I gen \
             src/tokenhelper.cpp $(find gen -name '*.cpp') \
             -lbinder_ndk -llog -ldl \
