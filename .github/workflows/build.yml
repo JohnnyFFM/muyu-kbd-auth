@@ -27,9 +27,17 @@ jobs:
           NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}}"
           if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then NDK="$(ls -d "$SDK"/ndk/* | sort -rV | head -1)"; fi
           echo "NDK=$NDK"; test -d "$NDK"
-          CLANG="$(ls "$NDK"/toolchains/llvm/prebuilt/*/bin/clang++ | head -1)"
-          READELF="$(ls "$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-readelf | head -1)"
-          echo "CLANG=$CLANG"; test -x "$CLANG"
+          BIN="$(ls -d "$NDK"/toolchains/llvm/prebuilt/*/bin | head -1)"
+          echo "BIN=$BIN"
+          # prefer the per-API clang wrapper (it sets --sysroot so android/ headers resolve)
+          CXX=""
+          for api in 34 33 32 31; do
+            if [ -x "$BIN/aarch64-linux-android${api}-clang++" ]; then CXX="$BIN/aarch64-linux-android${api}-clang++"; break; fi
+          done
+          [ -n "$CXX" ] || CXX="$BIN/clang++ --target=aarch64-linux-android31"
+          echo "CXX=$CXX"
+          echo "=== binder_ndk C++ headers in NDK ==="
+          find "$NDK" -name 'binder_interface_utils.h' -o -name 'binder_to_string.h' -o -name 'binder_parcel_utils.h' | head
 
           mkdir -p gen
           "$AIDL" --lang=ndk --structured --stability=vintf \
@@ -37,13 +45,12 @@ jobs:
             aidl/vendor/xiaomi/hardware/aidl/midevauth/IMidevauthService.aidl
           echo "=== generated ==="; find gen -type f
 
-          "$CLANG" --target=aarch64-linux-android31 \
-            -std=c++17 -O2 -Wall -fPIE -pie \
+          $CXX -std=c++17 -O2 -Wall -fPIE -pie \
             -I gen \
             src/tokenhelper.cpp $(find gen -name '*.cpp') \
             -lbinder_ndk -llog \
             -o tokenhelper
-          "$READELF" -h tokenhelper | head -20
+          "$BIN/llvm-readelf" -h tokenhelper | head -20
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
