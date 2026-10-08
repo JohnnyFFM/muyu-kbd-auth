@@ -51,6 +51,7 @@ log -t "$TAG" "kbd_auth start"
 [ -x "$HELPER" ] || logline "WARN: $HELPER not executable yet"
 exec 3< "$DEV" || { logline "## open failed"; exit 1; }
 UID_HEX=""; KM=""
+send_auth_start; logline "cold AUTH_START kick"
 carry=""
 while true; do
     chunk=$(dd bs=128 count=1 2>/dev/null <&3 | od -An -v -tx1 | tr -d '\n' | tr -s ' ')
@@ -87,7 +88,7 @@ while true; do
                     ktok=$(echo $* | cut -d' ' -f7-22)
                     kchal=$(echo $* | cut -d' ' -f23-38)
                     logline "0x32 kbdToken=$ktok kbdChallenge=$kchal"
-                    tok=$("$HELPER" token 1 "$UID_HEX" "$KM" "$kchal" 2>>"$LOG")
+                    tok=$(LD_LIBRARY_PATH=/vendor/lib64:/system/lib64 "$HELPER" token 1 "$UID_HEX" "$KM" "$kchal" 2>>"$LOG")
                     if [ -n "$tok" ]; then
                         logline "token_get -> $tok ; sending STEP5"
                         send_step5 $(echo $tok | sed 's/../& /g')

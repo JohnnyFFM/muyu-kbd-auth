@@ -77,3 +77,22 @@ Validated so far: `midevauthd` loads the `devauth` trustlet on crDroid and reads
 the key (key version 2); the handshake framing and the `token_get` call shape are
 confirmed against the decompiled stock service. End-to-end "keyboard enables" is
 the final on-device test.
+
+## Runtime notes (validated 2026-10-08)
+
+End-to-end verified on crDroid under **Enforcing SELinux**: `midevauthd` loads the
+`devauth` trustlet (key version 2), and `tokenhelper token …` returns a genuine
+16-byte token that the handshake sends as STEP5 — with no keyboard stall.
+
+Two gotchas that matter:
+
+1. **Vendor servicemanager.** `midevauthd` registers the HAL with the *vendor*
+   servicemanager (`vndservice list` shows it; `service list` does not). A client
+   must therefore use the vendor `libbinder`, or `AServiceManager_waitForService`
+   blocks forever. Run `tokenhelper` with
+   `LD_LIBRARY_PATH=/vendor/lib64:/system/lib64` so it binds `/dev/vndbinder`.
+   `device/kbd_auth.sh` already does this for its `tokenhelper` call.
+2. **Cold kick.** Unlike stock, nothing proactively starts auth, so `kbd_auth.sh`
+   sends one AUTH_START at startup and then answers every keyboard re-auth.
+
+`device/start.sh` launches both detached with the right environment.
